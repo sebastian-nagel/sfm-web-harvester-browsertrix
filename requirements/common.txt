@@ -1,0 +1,14 @@
+python-dateutil>=2.8.1
+certauth>=1.2.1
+
+# Master support Py3, but no release. This should be in sfm-utils setup.py once released.
+git+https://github.com/Supervisor/supervisor
+
+# Pinning to correct version for sfm-utils
+requests==2.22.0
+
+# Testing
+mock==2.0.0
+
+# required to shut-down subprocesses of browsertrix-crawler
+psutil
