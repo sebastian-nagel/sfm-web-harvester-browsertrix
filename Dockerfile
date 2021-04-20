@@ -1,7 +1,7 @@
 #FROM gwul/sfm-base@sha256:e68cb98bdc9dc23bbed734f3e507a0ffb866b007dffea038b6af8d88a62150e6 as sfmbase
-# upgraded to use python-3.9
+# upgraded to use python-3.9 and recent versions of requirements
 # (build sfm-base image from https://github.com/sebastian-nagel/sfm-utils/tree/eo2)
-FROM eo2/sfm-base:python-3.9 as sfmbase
+FROM eo2/sfm-base:latest as sfmbase
 
 # https://github.com/webrecorder/browsertrix-crawler
 # built locally from:
@@ -11,9 +11,7 @@ FROM eo2/browsertrix-crawler:latest
 # fix browsertrix-crawler permissions (not running crawls as root)
 RUN chmod a+rx /usr/bin/crawl \
     && chmod a+r /app/* \
-	&& find /app/behaviors/ -type d -exec chmod a+rx {} \; \
-	&& find /app/behaviors/ -type f -exec chmod a+r  {} \; \
-	&& chmod a+rwx /crawls
+    && chmod a+rwx /crawls
 
 
 ### from sfm-utils/docker/base/Dockerfile
