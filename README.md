@@ -28,3 +28,5 @@ cd sfm-web-harvester-browsertrix   # this repository
 docker build -t eo2/browsertrixharvester:latest .
 ```
 
+However, the harvester is usually build and launched via docker-compose.
+

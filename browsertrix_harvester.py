@@ -75,6 +75,7 @@ class BrowsertrixHarvester(BaseHarvester):
                 log.info("Crawl succeeded")
                 self.crawl_result_to_warc(collection_id, seed_url, browsertrix_args, res)
                 self.update_page_list(collection_id)
+                self.cleanup_warcs(collection_id)
             else:
                 msg = "Crawl failed with exit value {}, stderr:\n{}".format(
                     res.returncode,
@@ -99,8 +100,6 @@ class BrowsertrixHarvester(BaseHarvester):
                     log.debug("Killing child process %d (%s)", child.pid, child.name())
                     child.kill()
                     child.wait(1)
-            # TODO: (in production) clean up /crawl/collection/<id> in container
-            # os.rmdir(os.path.join('/crawls/collections', collection_id))
 
     def log_stats(self, collection_id):
         stats_file = os.path.join('/crawls/collections', collection_id, 'stats.json')
@@ -225,6 +224,8 @@ class BrowsertrixHarvester(BaseHarvester):
                                                               payload=BytesIO(line.encode('utf-8')),
                                                               warc_content_type='application/json')
                     w.warc_writer.write_record(record)
+                    self.result.harvest_counter["pages"] += 1
+                    self.result.increment_stats("pages")
 
         # screenshots
         scrsh_warc_dir = os.path.join('/crawls/collections', collection_id, 'screenshots')
@@ -246,9 +247,23 @@ class BrowsertrixHarvester(BaseHarvester):
             with open(warc_input, 'rb') as win:
                 w.write_data(win.read())
 
+    def cleanup_warcs(self, collection_id):
+        """clean up /crawls/collections/<id> in container:
+        - remove WARC files from archive/ and screenshots/
+         keep the rest for post-debugging: entire folder is cleaned up on startup"""
+        collection_dir = os.path.join('/crawls/collections/', collection_id)
+        for warc_dir in ['archive', 'screenshots']:
+            warc_dir = os.path.join(collection_dir, warc_dir)
+            for warc_file in os.listdir(warc_dir):
+                if warc_file.endswith('.warc.gz'):
+                    os.remove(os.path.join(warc_dir, warc_file))
+
     def process_warc(self, warc_filepath):
-        pass # TODO
+        # Note: pages are counted while processing pages.jsonl
+        pass
 
 
 if __name__ == "__main__":
     BrowsertrixHarvester.main(BrowsertrixHarvester, QUEUE, [ROUTING_KEY])
+
+
