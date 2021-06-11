@@ -1,6 +1,6 @@
 #FROM gwul/sfm-base@sha256:e68cb98bdc9dc23bbed734f3e507a0ffb866b007dffea038b6af8d88a62150e6 as sfmbase
 # upgraded to use python-3.9 and recent versions of requirements
-# (build sfm-base image from https://github.com/sebastian-nagel/sfm-utils/tree/eo2)
+# (build sfm-base image from https://github.com/sebastian-nagel/sfm-utils/tree/eo2-collector)
 FROM eo2/sfm-base:latest as sfmbase
 
 # https://github.com/webrecorder/browsertrix-crawler
