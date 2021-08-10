@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.8
 
 from __future__ import absolute_import
 import datetime
@@ -60,6 +60,7 @@ class BrowsertrixHarvester(BaseHarvester):
         try:
             res = subprocess.run(browsertrix_args,
                                  text=True, capture_output=True,
+                                 timeout=60*60*3, # timeout after 3h
                                  cwd='/crawls')
 
             self.log_stats(collection_id)
@@ -83,6 +84,19 @@ class BrowsertrixHarvester(BaseHarvester):
                 log.error(msg)
                 self.result.errors.append(Msg("crawl_{}".format(collection_id), msg, seed_id=seed_url))
                 # TODO: wrap WARC files also for failed crawls, maybe only few pages failed?
+
+        except subprocess.TimeoutExpired as e:
+            log.warn("Crawl timed out: %s", e)
+            if self.debug:
+                log.debug(">" * 40)
+                log.debug("Stdout:\n%s\n", e.stdout)
+                time.sleep(1)
+                log.debug("Stderr:\n%s\n", e.stderr)
+                time.sleep(1)
+                log.debug("<" * 40)
+            self.crawl_result_to_warc(collection_id, seed_url, browsertrix_args, res)
+            self.update_page_list(collection_id)
+            self.cleanup_warcs(collection_id)
 
         except Exception as e:
             log.exception("Crawl failed with exception", exc_info=e)
