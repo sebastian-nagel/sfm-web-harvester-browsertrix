@@ -13,6 +13,8 @@ RUN chmod a+rx /usr/bin/crawl \
     && chmod a+r /app/* \
     && chmod a+rwx /crawls
 
+# autoconf etc. are required to compile librabbitmq for Python 3.8
+RUN apt-get update && apt-get install -y --no-install-recommends autoconf automake pkg-config libtool
 
 ### from sfm-utils/docker/base/Dockerfile
 ARG DEBIAN_FRONTEND=noninteractive
@@ -35,7 +37,6 @@ ENV SFM_REQS release
 ENV DEBUG false
 COPY --from=sfmbase /opt/sfm-setup/setup_reqs.sh /opt/sfm-setup/
 ######################################
-
 
 ENV WORKDIR=/opt/sfm-web-harvester-browsertrix
 COPY requirements $WORKDIR/requirements

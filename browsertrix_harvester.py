@@ -92,6 +92,8 @@ class BrowsertrixHarvester(BaseHarvester):
         finally:
             # child processes of browsertrix-crawler are still running or terminated:
             # reap zombie processes or kill running processes
+            # TODO: should be fixed by
+            #       https://github.com/webrecorder/browsertrix-crawler/commit/e7d3767
             for child in psutil.Process(os.getpid()).children(recursive=True):
                 log.debug("Waiting for child process %d (%s) to terminate", child.pid, child.name())
                 try:
