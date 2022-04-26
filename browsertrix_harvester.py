@@ -218,6 +218,8 @@ class BrowsertrixHarvester(BaseHarvester):
 
     def crawl_result_to_warc(self, collection_id, seed_url, brtrix_args, brtrix_res):
         warc_dir = os.path.join('/crawls/collections', collection_id, 'archive')
+        pages_file = os.path.join('/crawls/collections', collection_id, 'pages/pages.jsonl')
+        warc_files = []
         try:
             warc_files = os.listdir(warc_dir)
             log.info("WARC files: %s", warc_files)
@@ -225,13 +227,16 @@ class BrowsertrixHarvester(BaseHarvester):
             msg = "Failed to read crawl output (WARC files): {}".format(e)
             log.exception(msg)
             self.result.warnings.append(Msg("crawl_{}".format(collection_id), msg, seed_id=seed_url))
-            return
+            if os.path.exists(pages_file):
+                pass # continue to log the capture errors
+            else:
+                return
 
         # write resulting WARC file(s)
         w = BrowsertrixHarvester.RotatingWarcWriter(self.message["id"], self.warc_temp_dir)
 
         # pages.jsonl : write one metadata record for every captured page
-        with open(os.path.join('/crawls/collections', collection_id, 'pages/pages.jsonl')) as pages:
+        with open(pages_file) as pages:
             for line in pages:
                 line = line.rstrip('\r\n')
                 page = json.loads(line)
@@ -240,8 +245,19 @@ class BrowsertrixHarvester(BaseHarvester):
                                                               payload=BytesIO(line.encode('utf-8')),
                                                               warc_content_type='application/json')
                     w.warc_writer.write_record(record)
-                    self.result.harvest_counter["pages"] += 1
-                    self.result.increment_stats("pages")
+                    if 'title' in page and page['title'] == 'Pywb Error':
+                        self.result.harvest_counter["page_errors"] += 1
+                        self.result.increment_stats("page_errors")
+                        msg = "Failed to capture page: %s" % page['text']
+                        log.warning(msg)
+                        if 'seed' in page and page['seed']:
+                            msg = "Failed to capture seed page: %s" % page['text']
+                            self.result.errors.append(Msg("crawl_{}".format(collection_id), msg, seed_id=seed_url))
+                        else:
+                            self.result.warnings.append(Msg("crawl_{}".format(collection_id), msg, seed_id=seed_url))
+                    else:
+                        self.result.harvest_counter["pages"] += 1
+                        self.result.increment_stats("pages")
 
         # screenshots
         scrsh_warc_dir = os.path.join('/crawls/collections', collection_id, 'screenshots')
@@ -270,9 +286,12 @@ class BrowsertrixHarvester(BaseHarvester):
         collection_dir = os.path.join('/crawls/collections/', collection_id)
         for warc_dir in ['archive', 'screenshots']:
             warc_dir = os.path.join(collection_dir, warc_dir)
-            for warc_file in os.listdir(warc_dir):
-                if warc_file.endswith('.warc.gz'):
-                    os.remove(os.path.join(warc_dir, warc_file))
+            try:
+                for warc_file in os.listdir(warc_dir):
+                    if warc_file.endswith('.warc.gz'):
+                        os.remove(os.path.join(warc_dir, warc_file))
+            except:
+                pass
 
     def process_warc(self, warc_filepath):
         # Note: pages are counted while processing pages.jsonl
