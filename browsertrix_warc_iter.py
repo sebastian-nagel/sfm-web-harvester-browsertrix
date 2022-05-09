@@ -40,7 +40,8 @@ class BrowsertrixWarcIter(BaseWarcIter):
     @staticmethod
     def item_types():
         return ['page_json_metadata', 'capture_metadata',
-                'rss_atom_feeds', 'html_metadata']
+                'rss_atom_feeds', 'html_metadata',
+                'page_all_metadata']
 
     @property
     def line_oriented(self):
@@ -106,6 +107,7 @@ class BrowsertrixWarcIter(BaseWarcIter):
                 if soup.head and soup.head.title:
                     metadata['title'] = soup.head.title.get_text(' ', strip=True)
 
+                metafields = {}
                 for meta in soup.findAll("meta"):
                     for (name, name_attr, value_attr, add_metadata) in [
                         ('og:title', 'property', 'content', 'title'),
@@ -134,10 +136,13 @@ class BrowsertrixWarcIter(BaseWarcIter):
                         if name == meta.get(name_attr, '').lower():
                             val = meta.get(value_attr, '').strip()
                             if val:
-                                if name not in metadata:
-                                    metadata[name] = val
+                                if name not in metafields:
+                                    metafields[name] = val
                                 if add_metadata and add_metadata not in metadata:
                                     metadata[add_metadata] = val
+
+                if metafields:
+                    metadata['meta'] = metafields
 
                 if 'title' not in metadata:
                     h1 = soup.find('h1')
@@ -145,6 +150,19 @@ class BrowsertrixWarcIter(BaseWarcIter):
                         metadata['title'] = h1.get_text(' ', strip=True)
 
                 yield 'html_metadata', url, date, metadata
+
+    def iterate_warc_files(self, filepaths):
+        for filepath in filepaths:
+            log.info("Iterating over %s", filepath)
+            filename = os.path.basename(filepath)
+            with open(filepath, 'rb') as f:
+                yield_count = 0
+                for record_count, record in enumerate((r for r in WARCIterator(f))):
+                    self._debug_counts(filename, record_count, yield_count, by_record_count=True)
+
+                    record_url = record.rec_headers.get_header('WARC-Target-URI')
+                    if self._select_record(record_url):
+                        yield record, record_url
 
     def iter(self, limit_item_types=None, dedupe=False, item_date_start=None, item_date_end=None):
         """
@@ -156,18 +174,49 @@ class BrowsertrixWarcIter(BaseWarcIter):
                           item_type, self.item_types())
                 return
 
-        for filepath in self.filepaths:
-            log.info("Iterating over %s", filepath)
-            filename = os.path.basename(filepath)
-            with open(filepath, 'rb') as f:
-                yield_count = 0
-                for record_count, record in enumerate((r for r in WARCIterator(f))):
-                    self._debug_counts(filename, record_count, yield_count, by_record_count=True)
+        if 'page_all_metadata' in limit_item_types:
+            # a combination of page_json_metadata and html_metadata
+            items = []
+            for record, record_url in self.iterate_warc_files(self.filepaths):
+                items += list(self.process_record(record, record_url, ['page_json_metadata', 'html_metadata']))
+            pages = dict()
+            for item_type, item_id, item_date, item in items:
+                if item_type == 'page_json_metadata':
+                    pages[item_id] = (item_date, item)
+            for item_type, item_id, item_date, item in items:
+                if item_type == 'html_metadata' and item_id in pages:
+                    page = pages[item_id][1]
+                    if 'text' in page and page['text'] == True:
+                        # add real text (repair result of bug in customized browsertrix driver)
+                        if item['text']:
+                            page['text'] = item['text']
+                    if 'article' not in page and item['article']:
+                        page['article'] = {}
+                        for to_, from_, func_ in [('title', 'title', None),
+                                                  ('byline', 'byline', None),
+                                                  ('date', 'date', None),
+                                                  ('content', 'content', None),
+                                                  ('textContent', 'plain_text',lambda l: '\n'.join(map(lambda i: i['text'], l)))]:
+                            if from_ in item['article']:
+                                val = item['article'][from_]
+                                if func_:
+                                    val = func_(val)
+                                page['article'][to_] = val
+                    if 'meta' in item and 'meta' not in page:
+                        page['meta'] = item['meta']
 
-                    record_url = record.rec_headers.get_header('WARC-Target-URI')
-                    if self._select_record(record_url):
-                        for item_type, item_id, item_date, item in self.process_record(record, record_url, limit_item_types):
-                            yield IterItem(item_type, item_id, item_date, record_url, item)
+            for item_id, (item_date, item) in pages.items():
+                if 'text' in item and item['text'] == True:
+                    item['text'] = ''
+                yield IterItem(item_type, item_id, item_date, record_url, item)
+            # remove page_all_metadata
+            limit_item_types = list(filter(lambda i: i != 'page_all_metadata', limit_item_types))
+            if not limit_item_types:
+                return
+
+        for record, record_url in self.iterate_warc_files(self.filepaths):
+            for item_type, item_id, item_date, item in self.process_record(record, record_url, limit_item_types):
+                yield IterItem(item_type, item_id, item_date, record_url, item)
 
     @staticmethod
     def attr_to_json(item) -> dict:
