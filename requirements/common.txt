@@ -23,4 +23,4 @@ attr
 # parse HTML
 beautifulsoup4
 lxml
-
+readabilipy

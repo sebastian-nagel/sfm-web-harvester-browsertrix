@@ -15,6 +15,7 @@ from sfmutils.warc_iter import BaseWarcIter, IterItem
 from bs4 import BeautifulSoup
 from bs4.dammit import EncodingDetector
 from dateutil.parser import parse as date_parse
+from readabilipy import simple_json_from_html_string
 from warcio.archiveiterator import WARCIterator
 
 
@@ -94,20 +95,25 @@ class BrowsertrixWarcIter(BaseWarcIter):
                 for script in soup(['script', 'style']):
                     script.extract()
                 text = soup.get_text(' ', strip=True)
+                article = simple_json_from_html_string(text)
 
                 date = date_parse(record.rec_headers['WARC-Date'])
                 ip_address = record.rec_headers['WARC-IP-Address']
 
-                metadata = {'url': url, 'ip': ip_address, 'title': None, 'text': text}
+                metadata = {'url': url, 'ip': ip_address, 'title': None,
+                            'text': text, 'article': article}
 
                 if soup.head and soup.head.title:
                     metadata['title'] = soup.head.title.get_text(' ', strip=True)
 
                 for meta in soup.findAll("meta"):
                     for (name, name_attr, value_attr, add_metadata) in [
-                        ('og:title', 'property', 'content', 'title'), ('og:url', 'property', 'content', None),
-                        ('og:image', 'property', 'content', None), ('og:description', 'property', 'content', None),
-                        ('twitter:site', 'property', 'content', None),  ('twitter:creator', 'property', 'content', None),
+                        ('og:title', 'property', 'content', 'title'),
+                        ('og:url', 'property', 'content', None),
+                        ('og:image', 'property', 'content', None),
+                        ('og:description', 'property', 'content', None),
+                        ('twitter:site', 'property', 'content', None),
+                        ('twitter:creator', 'property', 'content', None),
                         # publication/creation/modification date
                         ('pubdate', 'name', 'content', 'date-published'),
                         ('publishdate', 'name', 'content', 'date-published'),
