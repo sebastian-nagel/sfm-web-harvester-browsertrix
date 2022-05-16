@@ -7,4 +7,4 @@ echo "Waiting for dependencies"
 appdeps.py --wait-secs 60 --port-wait ${SFM_RABBITMQ_HOST}:${SFM_RABBITMQ_PORT} --file-wait /sfm-data/collection_set --file-wait /sfm-containers-data/containers
 
 echo "Starting harvester"
-exec gosu sfm python3 browsertrix_harvester.py --debug=$DEBUG --debug-warcprox=$DEBUG_WARCPROX service $SFM_RABBITMQ_HOST $SFM_RABBITMQ_USER $SFM_RABBITMQ_PASSWORD /sfm-containers-data/containers/$HOSTNAME --tries=$HARVEST_TRIES --priority-queues=$PRIORITY_QUEUES
+exec gosu sfm python3.8 browsertrix_harvester.py --debug=$DEBUG --debug-warcprox=$DEBUG_WARCPROX service $SFM_RABBITMQ_HOST $SFM_RABBITMQ_USER $SFM_RABBITMQ_PASSWORD /sfm-containers-data/containers/$HOSTNAME --tries=$HARVEST_TRIES --priority-queues=$PRIORITY_QUEUES
