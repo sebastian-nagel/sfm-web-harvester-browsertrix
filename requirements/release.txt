@@ -1,4 +1,4 @@
-#git+https://github.com/gwu-libraries/sfm-utils.git@2.3.0#egg=sfmutils
+#git+https://github.com/gwu-libraries/sfm-utils.git@2.5.0#egg=sfmutils
 git+https://github.com/sebastian-nagel/sfm-utils.git@eo2-collector#egg=sfmutils
 
 #git+https://github.com/gwu-libraries/warcprox.git@2.4b4-gwu#egg=warcprox

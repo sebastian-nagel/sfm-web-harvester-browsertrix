@@ -199,7 +199,7 @@ class BrowsertrixHarvester(BaseHarvester):
             self.warc = open(os.path.join(self.warc_temp_dir, self.warc_file_name), 'wb')
             self.warc_writer = warcio.WARCWriter(self.warc, gzip=True)
             warc_info = {
-                "software": "Social Feed Manager 2.3 (https://gwu-libraries.github.io/sfm-ui/), Browsertrix Crawler 0.3.0 (https://github.com/webrecorder/browsertrix-crawler), PyWB 2.5.0 (https://github.com/webrecorder/pywb/), warcio 1.7.4 (https://github.com/webrecorder/warcio)",
+                "software": "Social Feed Manager 2.5 (https://gwu-libraries.github.io/sfm-ui/), Browsertrix Crawler 0.5.0 (https://github.com/webrecorder/browsertrix-crawler), PyWB 2.6.7 (https://github.com/webrecorder/pywb/), warcio 1.7.4 (https://github.com/webrecorder/warcio)",
                 "format": "WARC File Format 1.1",
                 "conformsTo": "https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/",
             }
