@@ -3,6 +3,7 @@
 from __future__ import absolute_import
 import datetime
 import logging
+import io
 import json
 import os
 import random
@@ -26,8 +27,12 @@ ROUTING_KEY = "harvest.start.web.web_crawl_browsertrix"
 
 # rotate WARC if max size (1 GiB) is reached
 MAX_WARC_FILE_SIZE = 2**30
-# skip records exceeding maximum (50 MB, compressed)
+# skip/truncate WARC records exceeding maximum (50 MiB, compressed)
 MAX_WARC_RECORD_SIZE = 50 * 2**20
+# skip/truncate WARC media records (see method is_warc_record_media) exceeding 16 kiB
+MAX_WARC_RECORD_SIZE_MEDIA = 16 * 2**10
+# if WARC records are truncated, payload is truncated to 1 kiB
+WARC_RECORD_TRUNCATION_SIZE = 2**10
 
 class BrowsertrixHarvester(BaseHarvester):
 
@@ -152,14 +157,15 @@ class BrowsertrixHarvester(BaseHarvester):
         with open(page_list_file, 'w', encoding='utf-8') as stream:
             json.dump(page_list, stream, ensure_ascii=False)
 
+
     class RotatingWarcWriter():
         """write into rotating WARC files"""
 
-        # TODO: addressed by
+        # some features implemented here are also addressed by
         #   https://github.com/webrecorder/browsertrix-crawler/pull/33
-        #   However,
-        #    - need to put everything into WARC files, including screenshots and pages.jsonl
-        #    - need to remove over-sized WARC records
+        #  However, in addition, this writer also
+        #   - puts all resources into WARC files, including screenshots and pages.jsonl
+        #   - truncates over-sized and undesired WARC records to safe storage space
 
         def __init__(self, message_id, warc_temp_dir):
             # WARC file name pattern from https://github.com/internetarchive/warcprox/blob/f19ead00587633fe7e6ba6e3292456669755daaf/warcprox/writer.py#L69
@@ -207,14 +213,85 @@ class BrowsertrixHarvester(BaseHarvester):
             self.warc_writer.write_record(self.warc_writer.create_warcinfo_record(self.warc_file_name, warc_info))
 
         def write_data(self, data):
-            if len(data) > MAX_WARC_RECORD_SIZE:
-                # TODO: should inspect WARC data to ensure that no WARC record exceeds limit
-                log.warn("WARC data exceeds limit of 50 MiB")
             if (self.warc.tell() + len(data)) > MAX_WARC_FILE_SIZE:
                 # start next WARC file if 1 GB would be reached
                 self.next_warc_writer()
             self.warc.write(data)
 
+        def is_warc_record_media(self, record):
+            if record.rec_type == 'response':
+                content_type = record.http_headers.get_header('Content-Type')
+                if content_type and (content_type.startswith('video/') or
+                                     content_type.startswith('audio/')):
+                    return True
+            return False
+
+        def is_truncate_record(self, record):
+            if record.rec_type == 'response':
+                content_length = len(record.content_stream().read())
+                if (content_length > MAX_WARC_RECORD_SIZE or
+                    (self.is_warc_record_media(record) and
+                     content_length > MAX_WARC_RECORD_SIZE_MEDIA)):
+                    return True
+            return False
+
+        def truncate_record(self, record, warc_writer):
+            payload = record.content_stream().read(WARC_RECORD_TRUNCATION_SIZE)
+            headers = record.rec_headers
+            headers.add_header('WARC-Truncated', 'length')
+            http_headers = record.http_headers
+            content_length_orig = http_headers.get_header('Content-Length')
+            if content_length_orig:
+                http_headers.add_header('X-Orig-Content-Length', content_length_orig)
+                http_headers.replace_header('Content-Length', str(len(payload)))
+            return warc_writer.create_warc_record(
+                record.rec_headers.get_header('WARC-Target-URI'),
+                record.rec_headers.get_header('WARC-Type'),
+                payload=io.BytesIO(payload),
+                warc_headers=headers,
+                http_headers=http_headers
+            )
+
+        def write_warc(self, warc_input):
+            truncate_record_offsets = []
+
+            with open(warc_input, 'rb') as stream:
+                archive_iterator = warcio.ArchiveIterator(stream)
+                for record in archive_iterator:
+                    if self.is_truncate_record(record):
+                        truncate_record_offsets.append((archive_iterator.get_record_offset(),
+                                                        archive_iterator.get_record_length()))
+
+            if not truncate_record_offsets:
+                with open(warc_input, 'rb') as win:
+                    self.write_data(win.read())
+                return
+
+            with open(warc_input, 'rb') as stream:
+                offset = 0
+                for (next_offset, next_length) in truncate_record_offsets:
+
+                    # copy data until next record to be truncated is reached
+                    if offset < next_offset:
+                        self.write_data(stream.read(next_offset - offset))
+                        offset = next_offset
+
+                    # truncate record
+                    try:
+                        truncated_record = self.truncate_record(next(warcio.ArchiveIterator(stream)),
+                                                                self.warc_writer)
+                        self.warc_writer.write_record(truncated_record)
+                    except Exception as e:
+                        log.warn("Failed to truncate WARC record (keeping record):", e)
+                        stream.seek(offset)
+                        self.write_data(stream.read(next_length))
+
+                    # seek to next record
+                    offset = next_offset + next_length
+                    stream.seek(offset)
+
+                # write trailing records
+                self.write_data(stream.read())
 
     def crawl_result_to_warc(self, collection_id, seed_url, brtrix_args, brtrix_res):
         warc_dir = os.path.join('/crawls/collections', collection_id, 'archive')
@@ -276,8 +353,7 @@ class BrowsertrixHarvester(BaseHarvester):
         # WARC files
         for warc_file in warc_files:
             warc_input = os.path.join(warc_dir, warc_file)
-            with open(warc_input, 'rb') as win:
-                w.write_data(win.read())
+            w.write_warc(warc_input)
 
     def cleanup_warcs(self, collection_id):
         """clean up /crawls/collections/<id> in container:
