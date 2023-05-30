@@ -96,7 +96,18 @@ class BrowsertrixWarcIter(BaseWarcIter):
                 for script in soup(['script', 'style']):
                     script.extract()
                 text = soup.get_text(' ', strip=True)
-                article = simple_json_from_html_string(text)
+                content_bytes = None
+                article = None
+                try:
+                    content_bytes = content.decode(encoding)
+                except UnicodeDecodeError as e:
+                    log.warning("Failed to decode HTML: %s", e)
+                nodejs_installed = False # TODO: if node.js v10 or higher is installed, set to True
+                if content_bytes:
+                    try:
+                        article = simple_json_from_html_string(content.decode(encoding), use_readability=nodejs_installed)
+                    except Exception as e:
+                        log.warning("Failed to extract text with ReadabilyPy: %s", e)
 
                 date = date_parse(record.rec_headers['WARC-Date'])
                 ip_address = record.rec_headers['WARC-IP-Address']
@@ -175,7 +186,7 @@ class BrowsertrixWarcIter(BaseWarcIter):
                 return
 
         if 'page_all_metadata' in limit_item_types:
-            # a combination of page_json_metadata and html_metadata
+            # a combination of page_json_metadata with fields/content from html_metadata and capture_metadata
             items = []
             for record, record_url in self.iterate_warc_files(self.filepaths):
                 items += list(self.process_record(record, record_url,
@@ -184,6 +195,7 @@ class BrowsertrixWarcIter(BaseWarcIter):
             for item_type, item_id, item_date, item in items:
                 if item_type == 'page_json_metadata':
                     pages[item_id] = (item_date, item)
+
             for item_type, item_id, item_date, item in items:
                 if item_id not in pages:
                     continue
