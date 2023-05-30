@@ -178,13 +178,18 @@ class BrowsertrixWarcIter(BaseWarcIter):
             # a combination of page_json_metadata and html_metadata
             items = []
             for record, record_url in self.iterate_warc_files(self.filepaths):
-                items += list(self.process_record(record, record_url, ['page_json_metadata', 'html_metadata']))
+                items += list(self.process_record(record, record_url,
+                                                  ['capture_metadata', 'page_json_metadata', 'html_metadata']))
             pages = dict()
             for item_type, item_id, item_date, item in items:
                 if item_type == 'page_json_metadata':
                     pages[item_id] = (item_date, item)
             for item_type, item_id, item_date, item in items:
-                if item_type == 'html_metadata' and item_id in pages:
+                if item_id not in pages:
+                    continue
+                if item_type == 'capture_metadata':
+                    pages[item_id][1]['capture'] = {'ip': item['ip'], 'date': item['date']}
+                elif item_type == 'html_metadata':
                     page = pages[item_id][1]
                     if 'text' in page and page['text'] == True:
                         # add real text (repair result of bug in customized browsertrix driver)
@@ -192,11 +197,13 @@ class BrowsertrixWarcIter(BaseWarcIter):
                             page['text'] = item['text']
                     if 'article' not in page and item['article']:
                         page['article'] = {}
-                        for to_, from_, func_ in [('title', 'title', None),
-                                                  ('byline', 'byline', None),
-                                                  ('date', 'date', None),
-                                                  ('content', 'content', None),
-                                                  ('textContent', 'plain_text',lambda l: '\n'.join(map(lambda i: i['text'], l)))]:
+                        for to_, from_, func_ in [
+                                ('title', 'title', None),
+                                ('byline', 'byline', None),
+                                ('date', 'date', None),
+                                ('content', 'content', None),
+                                ('textContent', 'plain_text',
+                                 lambda l: '\n'.join(map(lambda i: i['text'], l)))]:
                             if from_ in item['article']:
                                 val = item['article'][from_]
                                 if func_:
